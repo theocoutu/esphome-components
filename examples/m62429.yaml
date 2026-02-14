@@ -1,0 +1,246 @@
+external_components:
+  #source:
+  #  type: git
+  #  url: https://github.com/theocoutu/esphome-components/
+  #  ref: main
+  source: github://theocoutu/esphome-components/
+  components: [m62429]
+
+esphome:
+  name: volume-control
+  friendly_name: volume_control
+  on_boot:
+    priority: 251.0
+    then:
+    - if: 
+        condition:
+          #lambda: 'return id(mute_sw).state == false;'
+          switch.is_off: mute_sw
+        then: 
+        - output.set_level:
+            id: volcon
+            level: !lambda 'return (float)(( id(volnum).state +87)/87);'
+    - component.update: disp_dev
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  level: WARN  # NONE, ERROR, WARN, INFO, DEBUG(default), VERBOSE, VERY_VERBOSE
+#  level: ERROR
+
+# Enable Home Assistant API
+api:
+
+ota:
+- platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Volume-Control Fallback Hotspot"
+
+captive_portal:
+    
+
+web_server:
+  include_internal: True
+  ota: False
+  #local: True
+  version: 1
+  
+
+
+number:
+- platform: template
+  icon: mdi:volume-medium
+  name: "Volume"
+  id: volnum
+  optimistic: true
+  min_value: -87
+  max_value: 0
+  step: 1
+  set_action:
+    then:
+    - if: 
+        condition:
+          #lambda: 'return id(mute_sw).state == false;'
+          switch.is_off: mute_sw
+        then: 
+        - output.set_level:
+            id: volcon
+            level: !lambda 'return (float)((x +87)/87);'
+    #- component.update: disp_dev
+  on_value: 
+    then:
+    - component.update: disp_dev
+  initial_value: -85
+  restore_value: True
+
+#- platform: template
+#  icon: mdi:volume-medium
+#  name: "Volume 0..1"
+#  id: volflt
+#  #id: volnum
+#  optimistic: true
+#  min_value: 0
+#  max_value: 100
+#  step: 1
+  #set_action:
+  #  then:
+  #  - if: 
+  #      condition:
+  #        #lambda: 'return id(mute_sw).state == false;'
+  #        switch.is_off: mute_sw
+  #      then: 
+  #      - output.set_level:
+  #          id: volcon
+  #          level: !lambda 'return (float)((x +87)/87);'
+    #- component.update: disp_dev
+  #on_value: 
+  #  then:
+  #  - component.update: disp_dev
+  #initial_value: -85
+  #restore_value: True
+
+
+switch:
+- platform: template
+  icon: mdi:volume-mute
+  optimistic: True
+  name: "Mute"
+  id: mute_sw
+  #lambda: 'return id(global_mute) ;'
+  restore_mode: RESTORE_DEFAULT_OFF
+  turn_on_action:
+    then:
+    - output.set_level:
+        id: volcon
+        level: 0.0
+    #- component.update: disp_dev
+  turn_off_action:
+    then:
+    - output.set_level:
+        id: volcon
+        level: !lambda 'return (float)((id(volnum).state +87.0)/87);'
+    #- component.update: disp_dev
+  on_turn_off: 
+    then:
+    - component.update: disp_dev
+  on_turn_on: 
+    then:
+    - component.update: disp_dev
+
+
+
+# Example button configuration
+button:
+- platform: template
+  name: Volume Up
+  id: vol_up_swbtn
+  icon: "mdi:volume-plus"
+  on_press:
+    - number.increment:
+        id: volnum
+        cycle: false
+
+- platform: template
+  name: Volume Down
+  id: vol_dn_swbtn
+  icon: "mdi:volume-minus"
+  on_press:
+    - number.decrement:
+        id: volnum
+        cycle: false
+
+#- platform: template
+#  name: Mute
+#  id: mute_swbtn
+#  icon: "mdi:volume-mute"
+#  on_press:
+#    - switch.toggle: mute_sw
+
+
+binary_sensor:
+- platform: gpio
+  pin:
+    number: 5
+    mode: INPUT_PULLUP
+    inverted: true
+  name: "Mute Button"
+  internal: True
+  disabled_by_default: True
+#  id: mute_pushbtn
+  on_press:
+    then:
+    - switch.toggle: mute_sw
+
+sensor:
+- platform: rotary_encoder
+  name: "Volume Knob"
+  id: vol_knob
+  internal: True
+  disabled_by_default: True
+  restore_mode: ALWAYS_ZERO
+  pin_a:
+    number: 22
+    mode: INPUT
+  pin_b:
+    number: 23
+    mode: INPUT
+  max_value: 1
+  min_value: 0
+  resolution: 2 #1, 2, or 4 pulses per step
+  on_clockwise:
+    then:
+    - number.increment: 
+        id: volnum
+        cycle: false
+  on_anticlockwise:
+    then:
+    - number.decrement: 
+        id: volnum
+        cycle: false
+
+
+output:
+- platform: m62429
+  id: volcon
+  clk_pin: 17
+  data_pin: 16
+  initial_value: 0.0
+  #step_delay: 1us #default 2us
+
+
+i2c:
+  sda: 19
+  scl: 21
+  frequency: 800kHz
+
+display:
+- platform: ssd1306_i2c
+  id: disp_dev
+  model: "SSD1306 128x32"
+  lambda: |-
+    it.printf(0, 0, id(font_m1), TextAlign::TOP_LEFT, "% 3.0fdB", id(volnum).state );
+    it.printf(128, 0, id(font_m1), TextAlign::TOP_RIGHT, "%s", id(mute_sw).state?"Mute":"" );
+    //it.printf(0, 0, id(font_m1), TextAlign::TOP_LEFT, "%d  %1.3f", (int8_t)(id(global_volume)), (float)((id(global_volume)+87.0)/87) );
+    //it.printf(128, 0, id(font_m1), TextAlign::TOP_RIGHT, "%s", id(global_mute)?"Mute":"" );
+  #update_interval: always
+  #update_interval: never
+  #update_interval: 0ms
+  #update_interval: 3s
+
+font:
+  #- file: "gfonts://Montserrat@300"
+  - file: fonts/fixedsys.ttf
+  #- file: "gfonts://Tiny5@400"
+    id: font_m1
+    size: 24
+    glyphs: MutedB- 0123456789.
